@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # ==============================================================
-# IOC-LQR Full Pipeline (3 Trajectories + Fixed R=2 + IOC Learning)
+# IOC-LQR Full Pipeline (3 Trajectories + Fixed R=5 + IOC Learning)
 # With time-series (x,u) plots & phase-plane plot saved as PDFs
 # ==============================================================
 
 import os
+import warnings
 import numpy as np
 from scipy import linalg
 import matplotlib.pyplot as plt
@@ -50,6 +51,62 @@ def map_theta3_Q(theta3, eps_Q=1e-6):
                   [t2 * t3,       t3**2 + eps_Q]])
     return Q
 
+# === NEW: θ → (Q,R) 以及一阶/二阶导（配合 dW/dθ 解析式）
+def map_theta_QR_and_grads_hess(theta, eps_Q=1e-6, R_fixed=np.array([[5.0]])):
+    """
+    θ = [t1, t2, t3]  -> Q(2x2) as in map_theta3_Q; R is fixed (1x1).
+    Returns: Q, R, dQ(list len d), dR(list len d), ddQ(dxd list of 2x2), ddR(dxd list of 1x1)
+    """
+    t1, t2, t3 = theta
+    d = len(theta)
+
+    Q = np.array([[t1**2 + eps_Q, t2*t3],
+                  [t2*t3,         t3**2 + eps_Q]], dtype=float)
+    R = np.array(R_fixed, dtype=float)  # fixed
+
+    # First derivatives of Q wrt (t1,t2,t3)
+    dQ1 = np.array([[2.0*t1, 0.0],
+                    [0.0,    0.0]])
+    dQ2 = np.array([[0.0,  t3],
+                    [t3,   0.0]])
+    dQ3 = np.array([[0.0,  t2],
+                    [t2,   2.0*t3]])
+    dQ = [dQ1, dQ2, dQ3]
+
+    # R is fixed → zero derivatives
+    dR = [np.zeros_like(R) for _ in range(d)]
+
+    # Second derivatives (Hessians) ddQ[i][j]
+    Z = np.zeros_like(Q)
+    H11 = np.array([[2.0, 0.0],
+                    [0.0, 0.0]])
+    H22 = Z.copy()
+    H33 = np.array([[0.0, 0.0],
+                    [0.0, 2.0]])
+    H12 = np.array([[0.0, 0.0],
+                    [0.0, 0.0]])
+    H13 = np.array([[0.0, 0.0],
+                    [0.0, 0.0]])
+    # mixed t2,t3: d^2/dt2dt3 acts on off-diagonal entries
+    H23 = np.array([[0.0, 1.0],
+                    [1.0, 0.0]])
+
+    ddQ = [[Z,   Z,   Z],
+           [Z,   Z,   H23],
+           [Z,   H23, H33]]
+    ddQ[0][0] = H11  # overwrite
+    # symmetry
+    ddQ[0][1] = ddQ[1][0]
+    ddQ[0][2] = ddQ[2][0]
+    ddQ[1][1] = H22
+    ddQ[1][2] = H23
+    ddQ[2][1] = H23
+
+    # ddR all zeros (R fixed)
+    ddR = [[np.zeros_like(R) for _ in range(d)] for _ in range(d)]
+
+    return Q, R, dQ, dR, ddQ, ddR
+
 # =========================================================
 # LQR solver and simulation
 # =========================================================
@@ -79,7 +136,7 @@ def simulate_closed_loop_finite(A, B, K_list, x0):
     return x, u
 
 # =========================================================
-# Build W(θ)
+# Build lifted (Fbar, Gbar) and Pi for Info metric W(θ)
 # =========================================================
 def build_lifted_AB(A, B, T):
     n, m = A.shape[0], B.shape[1]
@@ -93,6 +150,40 @@ def build_lifted_AB(A, B, T):
             Fbar[t * n:(t + 1) * n, s * m:(s + 1) * m] = A_powers[t - 1 - s] @ B
     return Fbar, Gbar
 
+def build_P(n, m, T):
+    Iu = np.vstack([np.eye(m), np.zeros((n, m))])
+    Ix = np.vstack([np.zeros((m, n)), np.eye(n)])
+    P_u = linalg.block_diag(*[Iu for _ in range(T)])
+    P_x = linalg.block_diag(*[Ix for _ in range(T)])
+    return np.hstack([P_u, P_x])
+
+def build_Phi_and_Psi(n, m, T, S_set, C_list, Sigma_w):
+    S_sorted = sorted(S_set)
+    Cblk = C_list[0].shape[0]
+    Phi = np.zeros((len(S_sorted)*Cblk, T*(n+m)))
+    for i, t in enumerate(S_sorted):
+        Phi[i*Cblk:(i+1)*Cblk, t*(n+m):(t+1)*(n+m)] = C_list[t]
+    try:
+        Sigma_inv = linalg.inv(Sigma_w)
+    except linalg.LinAlgError:
+        warnings.warn("Sigma_w near-singular; using pinv.")
+        Sigma_inv = linalg.pinv(Sigma_w)
+    Psi = block_diag_repeat(Sigma_inv, len(S_sorted))
+    return Phi, Psi
+
+def build_Pi(A, B, n, m, T, S_set, C_list, Sigma_w):
+    Fbar, Gbar = build_lifted_AB(A, B, T)
+    P_ = build_P(n, m, T)
+    Phi, Psi = build_Phi_and_Psi(n, m, T, S_set, C_list, Sigma_w)
+    Iu = np.eye(T*m)
+    IF = np.vstack([Iu, Fbar])
+    temp = Phi @ P_ @ IF
+    Pi = temp.T @ Psi @ temp
+    return Pi, Fbar, Gbar
+
+# =========================================================
+# W(θ) for alpha-star selection (simple version)
+# =========================================================
 def make_W(A, B, n, m, T, R_fixed, sigma_w=0.1):
     Fbar, Gbar = build_lifted_AB(A, B, T)
     def W_func(theta3):
@@ -105,6 +196,97 @@ def make_W(A, B, n, m, T, R_fixed, sigma_w=0.1):
         W = (1/sigma_w) * (S_inv @ FtQG).T @ (S_inv @ FtQG)
         return 0.5 * (W + W.T)  # symmetrize
     return W_func
+
+# === NEW: W(θ) 及其梯度/海森（解析）+ 有限差分版本
+def make_W_and_grads_hess(A, B, n, m, T, S_set, C_list, Sigma_w, d, R_fixed=np.array([[5.0]])):
+    Pi, Fbar, Gbar = build_Pi(A, B, n, m, T, S_set, C_list, Sigma_w)
+    def W_and_grads(theta):
+        Q, R, dQ, dR, ddQ, ddR = map_theta_QR_and_grads_hess(theta, R_fixed=R_fixed)
+        Qbar = block_diag_repeat(Q, T)
+        Rbar = block_diag_repeat(R, T)
+        dQbar = [block_diag_repeat(dQ[i], T) for i in range(d)]
+        dRbar = [block_diag_repeat(dR[i], T) for i in range(d)]
+        ddQbar = [[block_diag_repeat(ddQ[i][j], T) for j in range(d)] for i in range(d)]
+        ddRbar = [[block_diag_repeat(ddR[i][j], T) for j in range(d)] for i in range(d)]
+
+        FtQF = Fbar.T @ Qbar @ Fbar
+        S = FtQF + Rbar
+        try:
+            S_inv = linalg.inv(S)
+        except linalg.LinAlgError:
+            warnings.warn("S near-singular; using pinv."); S_inv = linalg.pinv(S)
+        FtQG = Fbar.T @ Qbar @ Gbar
+        nstate = Gbar.shape[1]
+        W = np.zeros((nstate, nstate))
+        W_grads = [np.zeros_like(W) for _ in range(d)]
+
+        for i in range(d):
+            A_i = Fbar.T @ dQbar[i] @ Fbar
+            dRi = dRbar[i]
+            C_i = Fbar.T @ dQbar[i] @ Gbar
+            term1 = S_inv @ (A_i + dRi) @ S_inv @ FtQG
+            term2 = S_inv @ C_i
+            M_i = term1 - term2
+            W += M_i.T @ Pi @ M_i
+            for j in range(d):
+                A_j = Fbar.T @ dQbar[j] @ Fbar
+                dRj = dRbar[j]
+                dS = S_inv @ (A_j + dRj) @ S_inv
+                dA_i = Fbar.T @ ddQbar[i][j] @ Fbar + ddRbar[i][j]
+                dB = Fbar.T @ dQbar[j] @ Gbar
+                dC_i = Fbar.T @ ddQbar[i][j] @ Gbar
+                dM_i = (-dS @ (A_i + dRi) @ S_inv @ FtQG
+                        + S_inv @ dA_i @ S_inv @ FtQG
+                        - S_inv @ (A_i + dRi) @ dS @ FtQG
+                        + S_inv @ (A_i + dRi) @ S_inv @ dB
+                        + dS @ C_i - S_inv @ dC_i)
+                W_grads[j] += dM_i.T @ Pi @ M_i + M_i.T @ Pi @ dM_i
+        W = 0.5*(W + W.T)
+        W_grads = [0.5*(G + G.T) for G in W_grads]
+        return W, W_grads
+    return W_and_grads
+
+def make_W_and_grads_hess_1(A, B, n, m, T, S_set, C_list, Sigma_w, d,
+                            h_base=1e-3, use_pinv=True, ridge=0.0, R_fixed=np.array([[5.0]])):
+    Pi, Fbar, Gbar = build_Pi(A, B, n, m, T, S_set, C_list, Sigma_w)
+
+    def M_of_theta(theta):
+        Q, R, _, _, _, _ = map_theta_QR_and_grads_hess(theta, R_fixed=R_fixed)
+        Qbar = linalg.block_diag(*[Q for _ in range(T)])
+        Rbar = linalg.block_diag(*[R for _ in range(T)])
+        FtQF = Fbar.T @ Qbar @ Fbar
+        FtQG = Fbar.T @ Qbar @ Gbar
+        S = FtQF + Rbar
+        if ridge > 0:
+            S = S + ridge*np.eye(S.shape[0])
+        S_inv = np.linalg.pinv(S) if use_pinv else np.linalg.inv(S)
+        return S_inv @ FtQG
+
+    def W_from_M_sens(theta, h_vec):
+        M0 = M_of_theta(theta)
+        Tm = M0.shape[0]
+        Pi_eff = Pi[:Tm, :Tm]
+        W = np.zeros((n, n))
+        for i in range(d):
+            e = np.zeros_like(theta); e[i] = 1.0
+            Mi = (M_of_theta(theta + h_vec[i]*e) - M_of_theta(theta - h_vec[i]*e)) / (2*h_vec[i])
+            W += Mi.T @ Pi_eff @ Mi
+        return 0.5*(W + W.T)
+
+    def W_and_grads(theta):
+        theta = np.asarray(theta, dtype=float)
+        h_vec = np.maximum(h_base, 1e-6*(np.abs(theta) + 1.0))
+        W0 = W_from_M_sens(theta, h_vec)
+        W_grads = []
+        for i in range(d):
+            e = np.zeros_like(theta); e[i] = 1.0
+            Wp = W_from_M_sens(theta + h_vec[i]*e, h_vec)
+            Wm = W_from_M_sens(theta - h_vec[i]*e, h_vec)
+            Gi = (Wp - Wm) / (2*h_vec[i])
+            W_grads.append(0.5*(Gi + Gi.T))
+        return W0, W_grads
+
+    return W_and_grads
 
 # =========================================================
 # α★ = r * v_max(W)
@@ -119,7 +301,7 @@ def find_alpha_star(theta3, W_func, r_ball):
     return alpha_max, alpha_min, alpha_mid, eigvals[-1], eigvals[0], W
 
 # =========================================================
-# IOC Loss and Gradient (finite-diff)
+# IOC Loss and Gradient (finite-diff wrt θ for fitting)
 # =========================================================
 def rollout_from_theta(A, B, Q, R, alpha, T):
     Qf = np.zeros_like(Q)
@@ -144,7 +326,7 @@ def theta_rmse(theta_hat, theta_true):
     return np.sqrt(np.mean((theta_hat - theta_true)**2))
 
 # =========================================================
-# Plot helpers: (x,u) time series and phase-plane
+# Plot helpers
 # =========================================================
 def plot_time_series_and_save(A, B, K_list, alpha_list, labels, colors, T):
     fig, ax = plt.subplots(1, 2, figsize=(10, 4))
@@ -172,7 +354,6 @@ def plot_time_series_and_save(A, B, K_list, alpha_list, labels, colors, T):
     for a in ax: a.grid(alpha=0.3)
     plt.tight_layout()
 
-
     # Save split PDFs copied from combined axes
     for i, name in enumerate(["state_trajectory", "control_sequence"]):
         single_fig, single_ax = plt.subplots(figsize=(5, 4))
@@ -184,11 +365,11 @@ def plot_time_series_and_save(A, B, K_list, alpha_list, labels, colors, T):
                 color=line.get_color(),
                 linestyle=line.get_linestyle(),
                 linewidth=line.get_linewidth(),
-                marker=line.get_marker(),                
-                markersize=line.get_markersize(),       
+                marker=line.get_marker(),
+                markersize=line.get_markersize(),
                 markerfacecolor=line.get_markerfacecolor(),
                 markeredgecolor=line.get_markeredgecolor(),
-                markevery=line.get_markevery()          
+                markevery=line.get_markevery()
             )
 
         single_ax.set_xlabel(ax[i].get_xlabel())
@@ -207,36 +388,20 @@ def plot_time_series_and_save(A, B, K_list, alpha_list, labels, colors, T):
 
     save_and_show(fig, "state-control-traj.pdf", show=False)
 
-
 def plot_phase_plane_and_save(A, B, K_list, alpha_list, labels, colors, r_ball):
     fig2, ax2 = plt.subplots(figsize=(5, 4.5))
-
-    # α₁, α₂, α₃ marker 
     markers = ['o', '^', 'x']
 
     for i, (alpha, lbl, c) in enumerate(zip(alpha_list, labels, colors)):
-        marker = markers[i % len(markers)]  
-
+        marker = markers[i % len(markers)]
         x_hist, _ = simulate_closed_loop_finite(A, B, K_list, alpha)
+        ax2.plot(x_hist[:, 0], x_hist[:, 1], '-', lw=1.8,
+                 marker=marker, markersize=3.8, color=c, label=lbl)
+        ax2.plot(x_hist[0, 0], x_hist[0, 1], marker, color=c, markersize=7,
+                 markerfacecolor='none', markeredgewidth=1.4)
+        ax2.plot(x_hist[-1, 0], x_hist[-1, 1], 'x', color=c, markersize=7, mew=1.4)
 
-        ax2.plot(
-            x_hist[:, 0], x_hist[:, 1], '-', lw=1.8,
-            marker=marker, markersize=3.8, color=c, label=lbl
-        )
-
-        ax2.plot(
-            x_hist[0, 0], x_hist[0, 1],
-            marker, color=c, markersize=7,
-            markerfacecolor='none', markeredgewidth=1.4
-        )
-
-        ax2.plot(
-            x_hist[-1, 0], x_hist[-1, 1],
-            'x', color=c, markersize=7, mew=1.4
-        )
-
-    circle = plt.Circle((0, 0), r_ball, color='gray',
-                        fill=False, linestyle='--', alpha=0.5)
+    circle = plt.Circle((0, 0), r_ball, color='gray', fill=False, linestyle='--', alpha=0.5)
     ax2.add_patch(circle)
     ax2.set_xlabel("$x_1$")
     ax2.set_ylabel("$x_2$")
@@ -245,7 +410,6 @@ def plot_phase_plane_and_save(A, B, K_list, alpha_list, labels, colors, r_ball):
     ax2.legend(frameon=True, ncol=1)
     plt.tight_layout()
     save_and_show(fig2, "phase-plane.pdf", show=False)
-
 
 # =========================================================
 # Main Pipeline
@@ -259,7 +423,7 @@ def main():
     T = 50
     lr = 0.1
     num_iters = 6000
-    R_fixed = np.array([[5]])  # Fixed R = 2 (matches script title/prints)
+    R_fixed = np.array([[5.0]])  # Fixed R
 
     # System A (double integrator)
     dt = 0.1
@@ -272,14 +436,16 @@ def main():
 
     print("\n=== Step 1. True parameters (R fixed = 5.0) ===")
     theta_true = np.array([5.0, 5.0, 5.0])
-    # theta_true = np.array([3.0, 3.0, 3.0])
     print("θ_true =", theta_true)
 
-    # noise level
-    # sigma_w = 0.01  # standard deviation of measurement noise
+    # measurement noise covariance for info metric (observe x only)
     sigma_w = 0.001
+    C = np.hstack([np.zeros((n, m)), np.eye(n)])  # [u; x] → pick x
+    C_list = [C for _ in range(T)]
+    S_set = set(range(T))
+    Sigma_w = (sigma_w**2) * np.eye(n)
 
-    # Info geometry
+    # --- Info geometry: simple W for alpha* selection (与你原版一致接口)
     W_func = make_W(A, B, n, m, T, R_fixed, sigma_w=sigma_w)
     alpha_max, alpha_min, alpha_mid, λ_max, λ_min, W = find_alpha_star(theta_true, W_func, r_ball)
     print(f"λ_max={λ_max:.4f}, λ_min={λ_min:.4f}, ratio={λ_max/λ_min:.2f}, Tr(W)={np.trace(W):.4f}")
@@ -291,6 +457,15 @@ def main():
         print(f"α{i}: info = {val:.6f}")
     print(f"Info ratio (max/min) = {max(info_vals)/min(info_vals):.3f}")
 
+    # （可选）解析 dW/dθ 构造器：需要时可调用用于灵敏度分析/画图
+    d = len(theta_true)
+    W_and_grads_analytic = make_W_and_grads_hess(
+        A, B, n, m, T, S_set, C_list, Sigma_w, d, R_fixed=R_fixed
+    )
+    # W_and_grads_fdiff = make_W_and_grads_hess_1(
+    #     A, B, n, m, T, S_set, C_list, Sigma_w, d, R_fixed=R_fixed
+    # )
+
     # LQR gains under true Q
     Q_true = map_theta3_Q(theta_true)
     Qf = np.zeros_like(Q_true)
@@ -298,14 +473,10 @@ def main():
 
     # Three initial states (α’s)
     alpha_list = [alpha_max, alpha_min, alpha_mid]
-    # labels = [r"$\alpha_1$", r"$\alpha_2$", r"$\alpha_3$"]
     labels = [r"$\alpha_\max$", r"$\alpha_\min$", r"$\alpha_{\text{med}}$"]
-
     colors = ["#1f77b4", "#2ca02c", "#ff7f0e"]
 
-    # -----------------------------------------------------
-    # NEW: Plot (x,u) time series & phase-plane (PDFs)
-    # -----------------------------------------------------
+    # Plots
     plot_time_series_and_save(A, B, K_list, alpha_list, labels, colors, T)
     plot_phase_plane_and_save(A, B, K_list, alpha_list, labels, colors, r_ball)
 
@@ -313,26 +484,20 @@ def main():
     # Step 2. IOC Learning (R fixed)
     # =====================================================
     print("\n=== Step 2. IOC Learning (R=5 fixed) ===")
-    # theta_init = theta_true + 0.8 * rng.normal(size=theta_true.shape)
-    
 
     sigma = 3
-    np.random.seed(666) #333
-    theta_init = theta_true + sigma * np.random.random(len(theta_true)) - sigma / 2
-
-    # theta_init = np.array([4.5,5.5,4.5])/2
+    np.random.seed(666)
     theta_init = np.array([6.0, 6.0, 6.0])
-
-    print("θ_init_guess (randomized) =", theta_init)
+    print("θ_init_guess =", theta_init)
 
     results = {}
     for lbl, alpha_used, c in zip(labels, alpha_list, colors):
         x_true, u_true = rollout_from_theta(A, B, Q_true, R_fixed, alpha_used, T)
-        wx = sigma_w * np.random.randn(*x_true.shape)  # same shape as x_true
+        # add small noise
+        wx = sigma_w * np.random.randn(*x_true.shape)
         wu = sigma_w * np.random.randn(*u_true.shape)
-
         x_true = x_true + wx
-        u_ture = u_true + wu
+        u_true = u_true + wu  # <-- fixed typo
 
         theta_hat = theta_init.copy()
         losses, rmses = [], []
