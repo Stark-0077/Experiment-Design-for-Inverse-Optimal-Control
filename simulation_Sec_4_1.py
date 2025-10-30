@@ -45,7 +45,7 @@ def block_diag_repeat(M, T):
 # =========================================================
 # Core mapping: θ → Q (3-parameter PSD Q)
 # =========================================================
-def map_theta3_Q(theta3, eps_Q=1e-6):
+def map_theta_1_2_3_Q(theta3, eps_Q=1e-6):
     t1, t2, t3 = theta3
     Q = np.array([[t1**2 + eps_Q, t2 * t3],
                   [t2 * t3,       t3**2 + eps_Q]])
@@ -54,7 +54,7 @@ def map_theta3_Q(theta3, eps_Q=1e-6):
 # === NEW: θ → (Q,R) 以及一阶/二阶导（配合 dW/dθ 解析式）
 def map_theta_QR_and_grads_hess(theta, eps_Q=1e-6, R_fixed=np.array([[5.0]])):
     """
-    θ = [t1, t2, t3]  -> Q(2x2) as in map_theta3_Q; R is fixed (1x1).
+    θ = [t1, t2, t3]  -> Q(2x2) as in map_theta_1_2_3_Q; R is fixed (1x1).
     Returns: Q, R, dQ(list len d), dR(list len d), ddQ(dxd list of 2x2), ddR(dxd list of 1x1)
     """
     t1, t2, t3 = theta
@@ -139,16 +139,26 @@ def simulate_closed_loop_finite(A, B, K_list, x0):
 # Build lifted (Fbar, Gbar) and Pi for Info metric W(θ)
 # =========================================================
 def build_lifted_AB(A, B, T):
+    """
+    X = [x0, ..., x_{T-1}]
+    => X = Fbar * U + Gbar * x0
+    Fbar: (T*n, T*m)
+    Gbar: (T*n, n)
+    """
     n, m = A.shape[0], B.shape[1]
+    # A^k powers for k = 0..T-1
     A_powers = [np.eye(n)]
     for _ in range(1, T):
         A_powers.append(A_powers[-1] @ A)
-    Gbar = np.vstack(A_powers)              # (T*n, n)
+    # Gbar = [I; A; A²; ...; A^{T-1}]
+    Gbar = np.vstack(A_powers)
+    # Fbar: strictly lower block-triangular
     Fbar = np.zeros((T * n, T * m))
-    for t in range(T):
-        for s in range(t):
-            Fbar[t * n:(t + 1) * n, s * m:(s + 1) * m] = A_powers[t - 1 - s] @ B
+    for t in range(1, T):        # row: x_t
+        for s in range(t):       # col: u_s
+            Fbar[t*n:(t+1)*n, s*m:(s+1)*m] = A_powers[t-1-s] @ B
     return Fbar, Gbar
+
 
 def build_P(n, m, T):
     Iu = np.vstack([np.eye(m), np.zeros((n, m))])
@@ -173,13 +183,28 @@ def build_Phi_and_Psi(n, m, T, S_set, C_list, Sigma_w):
 
 def build_Pi(A, B, n, m, T, S_set, C_list, Sigma_w):
     Fbar, Gbar = build_lifted_AB(A, B, T)
+
+    # Pemutation matrix
     P_ = build_P(n, m, T)
+    
     Phi, Psi = build_Phi_and_Psi(n, m, T, S_set, C_list, Sigma_w)
-    Iu = np.eye(T*m)
-    IF = np.vstack([Iu, Fbar])
-    temp = Phi @ P_ @ IF
+
+    # I：T*m × T*m
+    I = np.eye(T * m)
+    I_Fbar = np.vstack([I, Fbar])
+
+    if P_.shape[1] != I_Fbar.shape[0]:
+        print(f"[Dimension mismatch] P_={P_.shape}, I_Fbar={I_Fbar.shape}")
+        raise ValueError("P_ and I_Fbar inner dims mismatch.")
+    if Phi.shape[1] != P_.shape[0]:
+        print(f"[Dimension mismatch] Phi={Phi.shape}, P_={P_.shape}")
+        raise ValueError("Phi and P_ inner dims mismatch.")
+
+    temp = Phi @ P_ @ I_Fbar
     Pi = temp.T @ Psi @ temp
+
     return Pi, Fbar, Gbar
+
 
 # =========================================================
 # W(θ) for alpha-star selection (simple version)
@@ -187,7 +212,7 @@ def build_Pi(A, B, n, m, T, S_set, C_list, Sigma_w):
 def make_W(A, B, n, m, T, R_fixed, sigma_w=0.1):
     Fbar, Gbar = build_lifted_AB(A, B, T)
     def W_func(theta3):
-        Q = map_theta3_Q(theta3)
+        Q = map_theta_1_2_3_Q(theta3)
         Qbar, Rbar = block_diag_repeat(Q, T), block_diag_repeat(R_fixed, T)
         FtQF = Fbar.T @ Qbar @ Fbar
         FtQG = Fbar.T @ Qbar @ Gbar
@@ -309,7 +334,7 @@ def rollout_from_theta(A, B, Q, R, alpha, T):
     return simulate_closed_loop_finite(A, B, K_list, alpha)
 
 def compute_loss_fixedR(theta3, x_target, u_target, A, B, alpha, T, R_fixed):
-    Q = map_theta3_Q(theta3)
+    Q = map_theta_1_2_3_Q(theta3)
     x_pred, u_pred = rollout_from_theta(A, B, Q, R_fixed, alpha, T)
     return np.mean((x_pred - x_target)**2) + np.mean((u_pred - u_target)**2)
 
@@ -432,7 +457,7 @@ def main():
     B = np.array([[0.5 * dt * dt],
                   [dt]])
 
-    n, m = A.shape
+    n, m = A.shape[0], B.shape[1]
 
     print("\n=== Step 1. True parameters (R fixed = 5.0) ===")
     theta_true = np.array([5.0, 5.0, 5.0])
@@ -467,7 +492,7 @@ def main():
     # )
 
     # LQR gains under true Q
-    Q_true = map_theta3_Q(theta_true)
+    Q_true = map_theta_1_2_3_Q(theta_true)
     Qf = np.zeros_like(Q_true)
     K_list, _ = lqr_finite_horizon_gains(A, B, Q_true, R_fixed, Qf, T)
 
