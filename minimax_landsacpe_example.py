@@ -187,7 +187,7 @@ if __name__ == "__main__":
     fig2 = plt.figure(figsize=(6,5))
     ax2 = fig2.add_subplot(111)
     cf2 = ax2.contourf(TH1, TH2, OBJ_log, levels=80, cmap="viridis", alpha=0.95)
-    contours = ax2.contour(TH1, TH2, OBJ_log, levels=15, colors='white', linewidths=0.35, alpha=0.6)
+    contours = ax2.contour(TH1, TH2, OBJ_log, levels=10, colors='white', linewidths=0.35, alpha=0.6)
     ax2.clabel(contours, inline=True, fontsize=10, fmt=lambda x: f"{x:.2f}", colors='white')
     ax2.imshow(OBJ_log, extent=(TH1.min(), TH1.max(), TH2.min(), TH2.max()),
                origin='lower', cmap="viridis", alpha=0.15, aspect='auto')
