@@ -79,7 +79,7 @@ def dQ_list(theta3):
     return [dQ1, dQ2, dQ3]
 
 # =========================================================
-# Direct rollout (no Riccati): return x_{0:T-1}, u_{0:T-1}
+# Direct rollout: return x_{0:T-1}, u_{0:T-1}
 # =========================================================
 def rollout_from_theta(A, B, Q, R, alpha, T, ridge=1e-8, Qf=None):
     n, m = A.shape[0], B.shape[1]
