@@ -22,7 +22,7 @@ plt.rcParams.update({
 # ==============================================================
 # === Save Folder ===
 # ==============================================================
-save_dir = "figures_landscape_logscale"
+save_dir = "figures_minimax_landscape"
 os.makedirs(save_dir, exist_ok=True)
 
 def save_fig(name, fig=None, show=True):
@@ -195,7 +195,7 @@ if __name__ == "__main__":
     ax2.set_xlabel(r"$\theta_1$")
     ax2.set_ylabel(r"$\theta_2$")
     ax2.grid(alpha=0.25)
-    save_fig("landscape_heatmap_log_labels", fig=fig2, show=True)
+    save_fig("landscape_heatmap_log_scale", fig=fig2, show=True)
 
     from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
     fig3 = plt.figure(figsize=(7,6))
