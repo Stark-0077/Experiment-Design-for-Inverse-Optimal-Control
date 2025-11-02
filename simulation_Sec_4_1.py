@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ==============================================================
-# Motivation examples — 3 Alphas, Full Plots
+# Motivation examples — 3 different intial states (Alphas), Full Plots
 # Outputs:
 #   - figures_sec_4_1/state_trajectory.pdf
 #   - figures_sec_4_1/control_sequence.pdf
