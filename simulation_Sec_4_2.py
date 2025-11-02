@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # ==============================================================
-# IOC–LQR Optimization (θ₄ = 5 Fixed)
+# Minimax Optimization (θ₄ = 5 Fixed)
 # Nested Alternating Optimization for (θ₁, θ₂, θ₃, α)
-# Two initializations → six figures (no layout warnings)
+# Two initializations → Figure 3 & Figure 4
 # ==============================================================
 
 import os
@@ -241,30 +241,30 @@ if __name__=="__main__":
     projector = lambda th: np.clip(th, l, u)
     Wfun = make_W_and_grads_fixedR(A, B, n, m, T, S_set, C_list, Sigma_w)
 
-    # ===== Case 1: θ₀ = [3,6,8]  → j_max=10, k_max=20 =====
-    theta0 = np.array([3, 6, 8])
-    print(f"\n=== Case 1: θ₀={theta0} ===")
-    theta_star, alpha_star, hist_theta, hist_alpha, hist_W, hist_obj = \
-        nested_theta_alpha_optimization(theta0, eta=0.002, j_max=10, k_max=20,
-                                        r=r, W_and_grads=Wfun, projector=projector)
-    plot_alpha_with_two_zooms(hist_alpha, "alpha_evolution_two_zooms.pdf",
-        zoom1_xlim=(50, 100), zoom1_ylim=(2.976, 2.979),
-        zoom2_xlim=(50, 100), zoom2_ylim=(0.360, 0.370))
-    plot_theta(hist_theta, "theta_evolution_fixedR_1.pdf")
-    plot_objective_zoom(hist_obj, "objective_fixedR_1_zoom.pdf",
-                        zoom_xlim=(50, 100), zoom_ylim=(758, 764))
-
-    # ===== Case 2: θ₀ = [5,8,5]  → j_max=70, k_max=20 =====
+    # ===== Case 1: θ₀ = [5,8,5]  → j_max=70, k_max=20 =====
     theta0 = np.array([5, 8, 5])
-    print(f"\n=== Case 2: θ₀={theta0} ===")
+    print(f"\n=== Case 1: θ₀={theta0} ===")
     theta_star, alpha_star, hist_theta, hist_alpha, hist_W, hist_obj = \
         nested_theta_alpha_optimization(theta0, eta=0.002, j_max=70, k_max=20,
                                         r=r, W_and_grads=Wfun, projector=projector)
-    plot_alpha_with_two_zooms(hist_alpha, "alpha_evolution_two_zooms_another.pdf",
+    plot_alpha_with_two_zooms(hist_alpha, "alpha_evolution_case_1.pdf",
         zoom1_xlim=(800, 900), zoom1_ylim=(-1.15563991, -1.15561994),
         zoom2_xlim=(800, 900), zoom2_ylim=(-2.768490, -2.768485))
-    plot_theta(hist_theta, "theta_evolution_fixedR.pdf")
-    plot_objective_zoom(hist_obj, "objective_fixedR_zoom.pdf",
+    plot_theta(hist_theta, "theta_evolution_case_1.pdf")
+    plot_objective_zoom(hist_obj, "objective_fixedR_case_1.pdf",
                         zoom_xlim=(800, 900), zoom_ylim=(1322.8, 1323.0))
+
+    # ===== Case 2: θ₀ = [3,6,8]  → j_max=10, k_max=20 =====
+    theta0 = np.array([3, 6, 8])
+    print(f"\n=== Case 2: θ₀={theta0} ===")
+    theta_star, alpha_star, hist_theta, hist_alpha, hist_W, hist_obj = \
+        nested_theta_alpha_optimization(theta0, eta=0.002, j_max=10, k_max=20,
+                                        r=r, W_and_grads=Wfun, projector=projector)
+    plot_alpha_with_two_zooms(hist_alpha, "alpha_evolution_case_2.pdf",
+        zoom1_xlim=(50, 100), zoom1_ylim=(2.976, 2.979),
+        zoom2_xlim=(50, 100), zoom2_ylim=(0.360, 0.370))
+    plot_theta(hist_theta, "theta_evolution_case_2.pdf")
+    plot_objective_zoom(hist_obj, "objective_fixedR_case_2.pdf",
+                        zoom_xlim=(50, 100), zoom_ylim=(758, 764))
 
     print(f"\n✅ All figures saved in: {os.path.abspath(save_dir)}")

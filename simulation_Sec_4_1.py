@@ -264,7 +264,7 @@ def plot_time_series_and_save(A, B, Q_true, R_fixed, alpha_list, labels, colors,
     save_and_show(fig, "state-control-traj.pdf", show=False)
 
 def plot_phase_plane_and_save(A, B, Q_true, R_fixed, alpha_list, labels, colors, r_ball, T):
-    fig2, ax2 = plt.subplots(figsize=(5, 4.5))
+    fig2, ax2 = plt.subplots(figsize=(5, 4))
     markers = ['o', '^', 'x']
 
     for i, (alpha, lbl, c) in enumerate(zip(alpha_list, labels, colors)):
@@ -286,15 +286,15 @@ def plot_phase_plane_and_save(A, B, Q_true, R_fixed, alpha_list, labels, colors,
     save_and_show(fig2, "phase-plane.pdf", show=False)
 
 def plot_overview_loss_rmse(results, labels, colors):
-    fig1, axL = plt.subplots(figsize=(5, 4.5))
+    fig1, axL = plt.subplots(figsize=(5, 4))
     for lbl, c in zip(labels, colors):
         axL.semilogy(results[lbl]["losses"], lw=2, color=c, label=lbl)
-    axL.set_xlabel("Iteration"); axL.set_ylabel("IOC Loss")
+    axL.set_xlabel("Iteration"); axL.set_ylabel("Loss of Trajecotry")
     axL.grid(alpha=0.3); axL.legend(frameon=True)
     fig1.tight_layout()
     save_and_show(fig1, "ioc_loss.pdf", show=False)
 
-    fig2, axR = plt.subplots(figsize=(5, 4.5))
+    fig2, axR = plt.subplots(figsize=(5, 4))
     for lbl, c in zip(labels, colors):
         axR.plot(results[lbl]["rmses"], lw=2, color=c, label=lbl)
     axR.set_xlabel("Iteration"); axR.set_ylabel("RMSE")
