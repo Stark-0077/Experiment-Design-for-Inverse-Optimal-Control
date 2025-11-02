@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ==============================================================
-# Motivation examples — 3 Alphas, Full Plots
+# IOC-LQR (Direct Optimization + Analytic IOC) — 3 Alphas, Full Plots
 # Outputs:
 #   - figures_sec_4_1/state_trajectory.pdf
 #   - figures_sec_4_1/control_sequence.pdf
@@ -302,6 +302,10 @@ def plot_overview_loss_rmse(results, labels, colors):
     fig2.tight_layout()
     save_and_show(fig2, "ioc_rmse.pdf", show=False)
 
+    print("✅ Figures saved to:")
+    print("   - ioc_loss.pdf")
+    print("   - ioc_rmse.pdf")
+
 # =========================================================
 # Main
 # =========================================================
@@ -326,7 +330,7 @@ def main():
     print("\n=== Alpha* selection via information metric W(θ_true) ===")
     W_func = make_W(A, B, n, m, T, R_fixed, sigma_w=0.001)
     alpha_max, alpha_min, alpha_med, lam_max, lam_min, W = find_alpha_star(theta_true, W_func, r_ball)
-    # print(f"λ_max={lam_max:.6f}, λ_min={lam_min:.6f}, ratio={lam_max/lam_min:.3f}, Tr(W)={np.trace(W):.6f}")
+    print(f"λ_max={lam_max:.6f}, λ_min={lam_min:.6f}, ratio={lam_max/lam_min:.3f}, Tr(W)={np.trace(W):.6f}")
 
     alpha_list = [alpha_max, alpha_min, alpha_med]
     labels = [r"$\alpha_\max$", r"$\alpha_\min$", r"$\alpha_{\text{med}}$"]
