@@ -12,7 +12,7 @@ The **Experiment-Design-for-Inverse-Optimal-Control** project provides an analyt
 - `landscape_logscale.py` – Log-scale objective landscapes (To view minimax problem)
 
 **Output directories**
-- `figures_sec_4_1/`, `figures_sec_4_2/`, `figures_landscape_logscale/` – auto-generated PDFs
+- `figures_sec_4_1/`, `figures_sec_4_2/`, `figures_minimax_landscape/` – auto-generated PDFs
 
 ---
 
