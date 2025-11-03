@@ -346,17 +346,17 @@ if __name__ == "__main__":
     projector = lambda th: np.clip(th, l, u)
 
     # --- Init θ (upper-tri U entries): give non-degenerate diagonals ---
-    theta0 = np.array([3.0,  0.2, 0.1, 0.1,
-                       2.0,  0.2, 0.1,
-                       1.5,  0.1,
-                       1.0])
+    theta0 = np.array([5.0,  5.0, 5.0,  5.0,
+                       5.0,  5.0,  5.0,
+                       5.0,  5.0,
+                       5.0])
 
     # --- Build W and grads (R fixed = 25 = 5^2) ---
     W_and_grads = make_W_and_grads_choleskyQ(A, B, n, m, T, R_fixed=25.0)
 
     # --- Optimization ---
     theta_star, alpha_star, hist_theta, hist_alpha, hist_W, hist_obj = nested_theta_alpha_optimization(
-        theta0, eta=0.1, j_max=150, k_max=50, r=3.0,
+        theta0, eta=1, j_max=5000, k_max=50, r=3.0,
         W_and_grads=W_and_grads, projector=projector,
         tol=1e-6, verbose=True)
 
