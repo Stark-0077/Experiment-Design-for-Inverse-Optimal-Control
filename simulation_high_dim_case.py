@@ -342,7 +342,7 @@ if __name__ == "__main__":
     T, n, m = 50, 4, 1
 
     # --- θ projector (range clamp to keep numerics sane; Q PSD via U anyway) ---
-    l, u = -10*np.ones(10), 10*np.ones(10)
+    l, u = 0*np.ones(10), 10*np.ones(10)
     projector = lambda th: np.clip(th, l, u)
 
     # --- Init θ (upper-tri U entries): give non-degenerate diagonals ---
