@@ -26,7 +26,7 @@ plt.rcParams.update({
 # =============================================================================
 # === Unified Save Folder ===
 # =============================================================================
-save_dir = "figures_4d"
+save_dir = "figures_high_dim_example"
 os.makedirs(save_dir, exist_ok=True)
 
 def save_fig(name, show=True):
@@ -228,7 +228,7 @@ def plot_theta_evolution(hist_theta):
     steps = np.arange(len(hist_theta))
     plt.figure(figsize=(7.4,4.6))
     for i in range(hist_theta.shape[1]):
-        plt.plot(steps, hist_theta[:,i], lw=1.6, label=fr'$\theta_{i+1}$')
+        plt.plot(steps, hist_theta[:,i], lw=1.6, label=fr'$\theta_{{{i+1}}}$')
     plt.xlabel("Iteration")
     plt.ylabel("θ Value")
     plt.legend(ncol=3)
@@ -334,7 +334,7 @@ def generate_system_4d_complex_poles(r1=0.95, w1=0.20, r2=0.90, w2=0.35):
 
 if __name__ == "__main__":
     print("="*76)
-    print(" IOC–LQR Analytic Gradient Pipeline (4D, complex poles; Q=U^T U; R fixed) ")
+    print(" High Dimension Example ")
     print("="*76)
 
     # --- System ---
@@ -365,13 +365,11 @@ if __name__ == "__main__":
     print(f"‖α*‖={np.linalg.norm(alpha_star):.6f} (target r=3.0)")
 
     # --- Plots ---
+    plot_poles(A)
     plot_alpha_components(hist_alpha)
     plot_theta_evolution(hist_theta)
     plot_objective(hist_obj)
     plot_condition_number(hist_W)
-    plot_poles(A)
-    # Optional zoom (tune as needed)
-    # plot_objective_with_zoom(hist_obj, zoom_xlim=(0, 80), zoom_ylim=None)
 
     print("theta_list (first 5 shown):", np.round(hist_theta[:5],3), " ...")
     print(f"\n✅ All figures saved in: {os.path.abspath(save_dir)}")
